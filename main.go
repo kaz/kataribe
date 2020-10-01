@@ -16,6 +16,7 @@ import (
 type Kataribe struct {
 	config Config
 	in     io.Reader
+	out    io.Writer
 
 	columns []*Column
 }
@@ -229,92 +230,92 @@ func (k *Kataribe) showMeasures(measures []*Measure) {
 	for _, column := range k.columns {
 		switch column.Name {
 		case "Count":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", countWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", countWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", countWidth))
 		case "Total":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", totalWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", totalWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%d.%df  ", totalWidth, k.config.EffectiveDigit))
 		case "Mean":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", meanWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", meanWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%d.%df  ", meanWidth, k.config.EffectiveDigit+1))
 		case "Stddev":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", meanWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", meanWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%d.%df  ", meanWidth, k.config.EffectiveDigit+1))
 		case "2xx":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", s2xxWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", s2xxWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", s2xxWidth))
 		case "3xx":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", s3xxWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", s3xxWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", s3xxWidth))
 		case "4xx":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", s4xxWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", s4xxWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", s4xxWidth))
 		case "5xx":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", s5xxWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", s5xxWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", s5xxWidth))
 		case "TotalBytes":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", totalBytesWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", totalBytesWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", totalBytesWidth))
 		case "MinBytes":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", bytesWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", bytesWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", bytesWidth))
 		case "MeanBytes":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", bytesWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", bytesWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", bytesWidth))
 		case "MaxBytes":
-			fmt.Printf(fmt.Sprintf("%%%ds  ", bytesWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", bytesWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", bytesWidth))
 
 		default:
-			fmt.Printf(fmt.Sprintf("%%%ds  ", maxWidth), column.Name)
+			fmt.Fprintf(k.out, fmt.Sprintf("%%%ds  ", maxWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%d.%df  ", maxWidth, k.config.EffectiveDigit))
 		}
 	}
-	fmt.Printf("Request\n")
+	fmt.Fprintf(k.out, "Request\n")
 
 	for r := 0; r < rankingCount; r++ {
 		m := measures[r]
 		c := 0
-		fmt.Printf(formats[c], m.Count)
+		fmt.Fprintf(k.out, formats[c], m.Count)
 		c++
-		fmt.Printf(formats[c], m.Total)
+		fmt.Fprintf(k.out, formats[c], m.Total)
 		c++
-		fmt.Printf(formats[c], m.Mean)
+		fmt.Fprintf(k.out, formats[c], m.Mean)
 		c++
 		if k.config.ShowStdDev {
-			fmt.Printf(formats[c], m.Stddev)
+			fmt.Fprintf(k.out, formats[c], m.Stddev)
 			c++
 		}
-		fmt.Printf(formats[c], m.Min)
+		fmt.Fprintf(k.out, formats[c], m.Min)
 		c++
 		for i := range k.config.Percentiles {
-			fmt.Printf(formats[c], m.Percentiles[i])
+			fmt.Fprintf(k.out, formats[c], m.Percentiles[i])
 			c++
 		}
-		fmt.Printf(formats[c], m.Max)
+		fmt.Fprintf(k.out, formats[c], m.Max)
 		c++
 		if k.config.ShowStatusCode {
-			fmt.Printf(formats[c], m.S2xx)
+			fmt.Fprintf(k.out, formats[c], m.S2xx)
 			c++
-			fmt.Printf(formats[c], m.S3xx)
+			fmt.Fprintf(k.out, formats[c], m.S3xx)
 			c++
-			fmt.Printf(formats[c], m.S4xx)
+			fmt.Fprintf(k.out, formats[c], m.S4xx)
 			c++
-			fmt.Printf(formats[c], m.S5xx)
+			fmt.Fprintf(k.out, formats[c], m.S5xx)
 			c++
 		}
 		if k.config.ShowBytes {
-			fmt.Printf(formats[c], m.TotalBytes)
+			fmt.Fprintf(k.out, formats[c], m.TotalBytes)
 			c++
-			fmt.Printf(formats[c], m.MinBytes)
+			fmt.Fprintf(k.out, formats[c], m.MinBytes)
 			c++
-			fmt.Printf(formats[c], m.MeanBytes)
+			fmt.Fprintf(k.out, formats[c], m.MeanBytes)
 			c++
-			fmt.Printf(formats[c], m.MaxBytes)
+			fmt.Fprintf(k.out, formats[c], m.MaxBytes)
 			c++
 		}
 
-		fmt.Printf("%s\n", m.Url)
+		fmt.Fprintf(k.out, "%s\n", m.Url)
 	}
 }
 
@@ -324,13 +325,13 @@ func (k *Kataribe) showTop(allTimes []*Time) {
 	if len(allTimes) < slowCount {
 		slowCount = len(allTimes)
 	}
-	fmt.Printf("TOP %d Slow Requests\n", slowCount)
+	fmt.Fprintf(k.out, "TOP %d Slow Requests\n", slowCount)
 
 	iWidth := k.getIntegerDigitWidth(float64(slowCount))
 	topWidth := k.getIntegerDigitWidth(allTimes[0].Time) + 1 + k.config.EffectiveDigit
 	f := fmt.Sprintf("%%%dd  %%%d.%df  %%s\n", iWidth, topWidth, k.config.EffectiveDigit)
 	for i := 0; i < slowCount; i++ {
-		fmt.Printf(f, i+1, allTimes[i].Time, allTimes[i].OriginUrl)
+		fmt.Fprintf(k.out, f, i+1, allTimes[i].Time, allTimes[i].OriginUrl)
 	}
 }
 
@@ -507,10 +508,10 @@ func (k *Kataribe) Run() error {
 		k.buildColumns()
 		for _, column := range k.columns {
 			if column.Sort != nil {
-				fmt.Printf("Top %d Sort By %s\n", k.config.RankingCount, column.Summary)
+				fmt.Fprintf(k.out, "Top %d Sort By %s\n", k.config.RankingCount, column.Summary)
 				By(column.Sort).Sort(measures)
 				k.showMeasures(measures)
-				fmt.Println()
+				fmt.Fprintln(k.out)
 			}
 		}
 	}
@@ -523,9 +524,10 @@ func (k *Kataribe) Run() error {
 	return nil
 }
 
-func New(in io.Reader, config Config) *Kataribe {
+func New(in io.Reader, out io.Writer, config Config) *Kataribe {
 	return &Kataribe{
 		in:     in,
+		out:    out,
 		config: config,
 	}
 }
