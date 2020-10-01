@@ -52,7 +52,7 @@ use Rack::CommonLogger, logger
 Install via go command or download [release file](https://github.com/matsuu/kataribe/releases)
 
 ```sh
-go get -u github.com/matsuu/kataribe
+go get -u github.com/kaz/kataribe/cli/kataribe
 ```
 
 Generate kataribe.toml
@@ -167,4 +167,3 @@ Apache-2.0
 ## Author
 
 [matsuu](https://github.com/matsuu)
-
