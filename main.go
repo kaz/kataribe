@@ -335,7 +335,7 @@ func (k *Kataribe) showTop(allTimes []*Time) {
 	}
 }
 
-func (k *Kataribe) Run() error {
+func (k *Kataribe) GetMeasures() ([]*Measure, []*Time, error) {
 	reader := bufio.NewScanner(k.in)
 	scale := math.Pow10(k.config.Scale)
 
@@ -464,7 +464,7 @@ func (k *Kataribe) Run() error {
 		tasks <- reader.Text()
 	}
 	if err := reader.Err(); err != nil {
-		return fmt.Errorf("reading standard input: %w", err)
+		return nil, nil, fmt.Errorf("reading standard input: %w", err)
 	}
 	close(tasks)
 	wg.Wait()
@@ -504,6 +504,17 @@ func (k *Kataribe) Run() error {
 		measures = append(measures, measure)
 	}
 
+	return measures, allTimes, nil
+}
+
+func (k *Kataribe) Print(out io.Writer) error {
+	k.out = out
+
+	measures, allTimes, err := k.GetMeasures()
+	if err != nil {
+		return fmt.Errorf("Failed to get measures: %w", err)
+	}
+
 	if len(measures) > 0 {
 		k.buildColumns()
 		for _, column := range k.columns {
@@ -524,10 +535,9 @@ func (k *Kataribe) Run() error {
 	return nil
 }
 
-func New(in io.Reader, out io.Writer, config Config) *Kataribe {
+func New(in io.Reader, config Config) *Kataribe {
 	return &Kataribe{
 		in:     in,
-		out:    out,
 		config: config,
 	}
 }
