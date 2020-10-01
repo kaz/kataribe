@@ -1,23 +1,27 @@
-package main
+package kataribe
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
-	"os"
 	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/BurntSushi/toml"
 )
 
-type tomlConfig struct {
+type Kataribe struct {
+	config Config
+	in     io.Reader
+
+	columns []*Column
+}
+
+type Config struct {
 	RankingCount   int  `toml:"ranking_count"`
 	SlowCount      int  `toml:"slow_count"`
 	ShowStdDev     bool `toml:"show_stddev"`
@@ -100,10 +104,6 @@ type Column struct {
 	Sort    By
 }
 
-var (
-	columns []*Column
-)
-
 type ByTime []*Time
 
 type Time struct {
@@ -118,34 +118,35 @@ func (a ByTime) Len() int           { return len(a) }
 func (a ByTime) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByTime) Less(i, j int) bool { return a[i].Time > a[j].Time }
 
-func buildColumns() {
-	columns = append(columns, &Column{Name: "Count", Summary: "Count", Sort: func(a, b *Measure) bool { return a.Count > b.Count }})
-	columns = append(columns, &Column{Name: "Total", Summary: "Total", Sort: func(a, b *Measure) bool { return a.Total > b.Total }})
-	columns = append(columns, &Column{Name: "Mean", Summary: "Mean", Sort: func(a, b *Measure) bool { return a.Mean > b.Mean }})
-	if config.ShowStdDev {
-		columns = append(columns, &Column{Name: "Stddev", Summary: "Standard Deviation", Sort: func(a, b *Measure) bool { return a.Stddev > b.Stddev }})
+func (k *Kataribe) buildColumns() {
+	k.columns = []*Column{}
+	k.columns = append(k.columns, &Column{Name: "Count", Summary: "Count", Sort: func(a, b *Measure) bool { return a.Count > b.Count }})
+	k.columns = append(k.columns, &Column{Name: "Total", Summary: "Total", Sort: func(a, b *Measure) bool { return a.Total > b.Total }})
+	k.columns = append(k.columns, &Column{Name: "Mean", Summary: "Mean", Sort: func(a, b *Measure) bool { return a.Mean > b.Mean }})
+	if k.config.ShowStdDev {
+		k.columns = append(k.columns, &Column{Name: "Stddev", Summary: "Standard Deviation", Sort: func(a, b *Measure) bool { return a.Stddev > b.Stddev }})
 	}
-	columns = append(columns, &Column{Name: "Min"})
-	for _, p := range config.Percentiles {
+	k.columns = append(k.columns, &Column{Name: "Min"})
+	for _, p := range k.config.Percentiles {
 		name := fmt.Sprintf("P%2.1f", p)
-		columns = append(columns, &Column{Name: name})
+		k.columns = append(k.columns, &Column{Name: name})
 	}
-	columns = append(columns, &Column{Name: "Max", Summary: "Maximum(100 Percentile)", Sort: func(a, b *Measure) bool { return a.Max > b.Max }})
-	if config.ShowStatusCode {
-		columns = append(columns, &Column{Name: "2xx"})
-		columns = append(columns, &Column{Name: "3xx"})
-		columns = append(columns, &Column{Name: "4xx"})
-		columns = append(columns, &Column{Name: "5xx"})
+	k.columns = append(k.columns, &Column{Name: "Max", Summary: "Maximum(100 Percentile)", Sort: func(a, b *Measure) bool { return a.Max > b.Max }})
+	if k.config.ShowStatusCode {
+		k.columns = append(k.columns, &Column{Name: "2xx"})
+		k.columns = append(k.columns, &Column{Name: "3xx"})
+		k.columns = append(k.columns, &Column{Name: "4xx"})
+		k.columns = append(k.columns, &Column{Name: "5xx"})
 	}
-	if config.ShowBytes {
-		columns = append(columns, &Column{Name: "TotalBytes"})
-		columns = append(columns, &Column{Name: "MinBytes"})
-		columns = append(columns, &Column{Name: "MeanBytes"})
-		columns = append(columns, &Column{Name: "MaxBytes"})
+	if k.config.ShowBytes {
+		k.columns = append(k.columns, &Column{Name: "TotalBytes"})
+		k.columns = append(k.columns, &Column{Name: "MinBytes"})
+		k.columns = append(k.columns, &Column{Name: "MeanBytes"})
+		k.columns = append(k.columns, &Column{Name: "MaxBytes"})
 	}
 }
 
-func getIntegerDigitWidth(f float64) int {
+func (k *Kataribe) getIntegerDigitWidth(f float64) int {
 	var w int
 	switch {
 	case f < 0:
@@ -159,11 +160,11 @@ func getIntegerDigitWidth(f float64) int {
 	return w
 }
 
-func showMeasures(measures []*Measure) {
+func (k *Kataribe) showMeasures(measures []*Measure) {
 	MIN_COUNT_WIDTH := 5 // for title
-	MIN_TOTAL_WIDTH := 2 + config.EffectiveDigit
-	MIN_MEAN_WIDTH := 2 + config.EffectiveDigit + 1
-	MIN_MAX_WIDTH := 2 + config.EffectiveDigit
+	MIN_TOTAL_WIDTH := 2 + k.config.EffectiveDigit
+	MIN_MEAN_WIDTH := 2 + k.config.EffectiveDigit + 1
+	MIN_MAX_WIDTH := 2 + k.config.EffectiveDigit
 	MIN_STATUS_WIDTH := 3 // for title
 
 	countWidth := MIN_COUNT_WIDTH // for title
@@ -177,69 +178,69 @@ func showMeasures(measures []*Measure) {
 	totalBytesWidth := 10
 	bytesWidth := 9 // for title
 
-	rankingCount := config.RankingCount
+	rankingCount := k.config.RankingCount
 	if len(measures) < rankingCount {
 		rankingCount = len(measures)
 	}
 	for i := 0; i < rankingCount; i++ {
 		var w int
-		w = getIntegerDigitWidth(float64(measures[i].Count))
+		w = k.getIntegerDigitWidth(float64(measures[i].Count))
 		if countWidth < w {
 			countWidth = w
 		}
-		w = getIntegerDigitWidth(measures[i].Total) + 1 + config.EffectiveDigit
+		w = k.getIntegerDigitWidth(measures[i].Total) + 1 + k.config.EffectiveDigit
 		if totalWidth < w {
 			totalWidth = w
 		}
-		w = getIntegerDigitWidth(measures[i].Mean) + 1 + config.EffectiveDigit + 1
+		w = k.getIntegerDigitWidth(measures[i].Mean) + 1 + k.config.EffectiveDigit + 1
 		if meanWidth < w {
 			meanWidth = w
 		}
-		w = getIntegerDigitWidth(measures[i].Max) + 1 + config.EffectiveDigit
+		w = k.getIntegerDigitWidth(measures[i].Max) + 1 + k.config.EffectiveDigit
 		if maxWidth < w {
 			maxWidth = w
 		}
-		w = getIntegerDigitWidth(float64(measures[i].S2xx))
+		w = k.getIntegerDigitWidth(float64(measures[i].S2xx))
 		if s2xxWidth < w {
 			s2xxWidth = w
 		}
-		w = getIntegerDigitWidth(float64(measures[i].S3xx))
+		w = k.getIntegerDigitWidth(float64(measures[i].S3xx))
 		if s3xxWidth < w {
 			s3xxWidth = w
 		}
-		w = getIntegerDigitWidth(float64(measures[i].S4xx))
+		w = k.getIntegerDigitWidth(float64(measures[i].S4xx))
 		if s4xxWidth < w {
 			s4xxWidth = w
 		}
-		w = getIntegerDigitWidth(float64(measures[i].S5xx))
+		w = k.getIntegerDigitWidth(float64(measures[i].S5xx))
 		if s5xxWidth < w {
 			s5xxWidth = w
 		}
-		w = getIntegerDigitWidth(float64(measures[i].TotalBytes))
+		w = k.getIntegerDigitWidth(float64(measures[i].TotalBytes))
 		if totalBytesWidth < w {
 			totalBytesWidth = w
 		}
-		w = getIntegerDigitWidth(float64(measures[i].MaxBytes))
+		w = k.getIntegerDigitWidth(float64(measures[i].MaxBytes))
 		if bytesWidth < w {
 			bytesWidth = w
 		}
 	}
 
 	var formats []string
-	for _, column := range columns {
+	for _, column := range k.columns {
 		switch column.Name {
 		case "Count":
 			fmt.Printf(fmt.Sprintf("%%%ds  ", countWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", countWidth))
 		case "Total":
 			fmt.Printf(fmt.Sprintf("%%%ds  ", totalWidth), column.Name)
-			formats = append(formats, fmt.Sprintf("%%%d.%df  ", totalWidth, config.EffectiveDigit))
+			formats = append(formats, fmt.Sprintf("%%%d.%df  ", totalWidth, k.config.EffectiveDigit))
 		case "Mean":
 			fmt.Printf(fmt.Sprintf("%%%ds  ", meanWidth), column.Name)
-			formats = append(formats, fmt.Sprintf("%%%d.%df  ", meanWidth, config.EffectiveDigit+1))
+			formats = append(formats, fmt.Sprintf("%%%d.%df  ", meanWidth, k.config.EffectiveDigit+1))
 		case "Stddev":
 			fmt.Printf(fmt.Sprintf("%%%ds  ", meanWidth), column.Name)
-			formats = append(formats, fmt.Sprintf("%%%d.%df  ", meanWidth, config.EffectiveDigit+1))
+			formats = append(formats, fmt.Sprintf("%%%d.%df  ", meanWidth, k.config.EffectiveDigit+1))
 		case "2xx":
 			fmt.Printf(fmt.Sprintf("%%%ds  ", s2xxWidth), column.Name)
 			formats = append(formats, fmt.Sprintf("%%%dd  ", s2xxWidth))
@@ -267,7 +268,7 @@ func showMeasures(measures []*Measure) {
 
 		default:
 			fmt.Printf(fmt.Sprintf("%%%ds  ", maxWidth), column.Name)
-			formats = append(formats, fmt.Sprintf("%%%d.%df  ", maxWidth, config.EffectiveDigit))
+			formats = append(formats, fmt.Sprintf("%%%d.%df  ", maxWidth, k.config.EffectiveDigit))
 		}
 	}
 	fmt.Printf("Request\n")
@@ -281,19 +282,19 @@ func showMeasures(measures []*Measure) {
 		c++
 		fmt.Printf(formats[c], m.Mean)
 		c++
-		if config.ShowStdDev {
+		if k.config.ShowStdDev {
 			fmt.Printf(formats[c], m.Stddev)
 			c++
 		}
 		fmt.Printf(formats[c], m.Min)
 		c++
-		for i := range config.Percentiles {
+		for i := range k.config.Percentiles {
 			fmt.Printf(formats[c], m.Percentiles[i])
 			c++
 		}
 		fmt.Printf(formats[c], m.Max)
 		c++
-		if config.ShowStatusCode {
+		if k.config.ShowStatusCode {
 			fmt.Printf(formats[c], m.S2xx)
 			c++
 			fmt.Printf(formats[c], m.S3xx)
@@ -303,7 +304,7 @@ func showMeasures(measures []*Measure) {
 			fmt.Printf(formats[c], m.S5xx)
 			c++
 		}
-		if config.ShowBytes {
+		if k.config.ShowBytes {
 			fmt.Printf(formats[c], m.TotalBytes)
 			c++
 			fmt.Printf(formats[c], m.MinBytes)
@@ -318,58 +319,25 @@ func showMeasures(measures []*Measure) {
 	}
 }
 
-func showTop(allTimes []*Time) {
+func (k *Kataribe) showTop(allTimes []*Time) {
 	sort.Sort(ByTime(allTimes))
-	slowCount := config.SlowCount
+	slowCount := k.config.SlowCount
 	if len(allTimes) < slowCount {
 		slowCount = len(allTimes)
 	}
 	fmt.Printf("TOP %d Slow Requests\n", slowCount)
 
-	iWidth := getIntegerDigitWidth(float64(slowCount))
-	topWidth := getIntegerDigitWidth(allTimes[0].Time) + 1 + config.EffectiveDigit
-	f := fmt.Sprintf("%%%dd  %%%d.%df  %%s\n", iWidth, topWidth, config.EffectiveDigit)
+	iWidth := k.getIntegerDigitWidth(float64(slowCount))
+	topWidth := k.getIntegerDigitWidth(allTimes[0].Time) + 1 + k.config.EffectiveDigit
+	f := fmt.Sprintf("%%%dd  %%%d.%df  %%s\n", iWidth, topWidth, k.config.EffectiveDigit)
 	for i := 0; i < slowCount; i++ {
 		fmt.Printf(f, i+1, allTimes[i].Time, allTimes[i].OriginUrl)
 	}
 }
 
-var configFile string
-var config tomlConfig
-var modeGenerate bool
-
-func init() {
-	const (
-		defaultConfigFile = "kataribe.toml"
-		usage             = "configuration file"
-	)
-	flag.StringVar(&configFile, "conf", defaultConfigFile, usage)
-	flag.StringVar(&configFile, "f", defaultConfigFile, usage+" (shorthand)")
-	flag.BoolVar(&modeGenerate, "generate", false, "generate "+usage)
-	flag.Parse()
-}
-
-func main() {
-	if modeGenerate {
-		f, err := os.Create(configFile)
-		if err != nil {
-			log.Fatal("Failed to generate "+configFile+":", err)
-		}
-		defer f.Close()
-		_, err = f.Write([]byte(CONFIG_TOML))
-		if err != nil {
-			log.Fatal("Failed to write "+configFile+":", err)
-		}
-		os.Exit(0)
-	}
-	if _, err := toml.DecodeFile(configFile, &config); err != nil {
-		fmt.Println(err)
-		flag.Usage()
-		return
-	}
-
-	reader := bufio.NewScanner(os.Stdin)
-	scale := math.Pow10(config.Scale)
+func (k *Kataribe) Run() {
+	reader := bufio.NewScanner(k.in)
+	scale := math.Pow10(k.config.Scale)
 
 	done := make(chan struct{})
 
@@ -387,10 +355,10 @@ func main() {
 		done <- struct{}{}
 	}()
 
-	for _, b := range config.Bundle {
+	for _, b := range k.config.Bundle {
 		chBundle <- b
 	}
-	for _, b := range config.Bundles {
+	for _, b := range k.config.Bundles {
 		chBundle <- b
 	}
 	close(chBundle)
@@ -400,7 +368,7 @@ func main() {
 		compiledRegexp *regexp.Regexp
 		replace        string
 	}
-	urlReplaceRegexps := make([]*replaceRegexp, 0, len(config.Replace))
+	urlReplaceRegexps := make([]*replaceRegexp, 0, len(k.config.Replace))
 	chReplace := make(chan replaceConfig)
 	go func() {
 		for replace := range chReplace {
@@ -411,7 +379,7 @@ func main() {
 		}
 		done <- struct{}{}
 	}()
-	for _, r := range config.Replace {
+	for _, r := range k.config.Replace {
 		chReplace <- r
 	}
 	close(chReplace)
@@ -447,7 +415,7 @@ func main() {
 		done <- struct{}{}
 	}()
 
-	logParser := regexp.MustCompile(config.LogFormat)
+	logParser := regexp.MustCompile(k.config.LogFormat)
 
 	tasks := make(chan string)
 	cpus := runtime.NumCPU()
@@ -461,7 +429,7 @@ func main() {
 				submatch := logParser.FindAllStringSubmatch(strings.TrimSpace(line), -1)
 				if len(submatch) > 0 {
 					s := submatch[0]
-					url := s[config.RequestIndex]
+					url := s[k.config.RequestIndex]
 					originUrl := url
 					for name, re := range urlNormalizeRegexps {
 						if re.MatchString(url) {
@@ -472,17 +440,17 @@ func main() {
 					for _, replace := range urlReplaceRegexps {
 						url = replace.compiledRegexp.ReplaceAllString(url, replace.replace)
 					}
-					time, err := strconv.ParseFloat(s[config.DurationIndex], 10)
+					time, err := strconv.ParseFloat(s[k.config.DurationIndex], 10)
 					if err == nil {
 						time = time * scale
 					} else {
 						time = 0.000
 					}
-					statusCode, err := strconv.Atoi(string(s[config.StatusIndex][0]))
+					statusCode, err := strconv.Atoi(string(s[k.config.StatusIndex][0]))
 					if err != nil {
 						statusCode = 0
 					}
-					bytes, err := strconv.Atoi(s[config.BytesIndex])
+					bytes, err := strconv.Atoi(s[k.config.BytesIndex])
 					if err != nil {
 						bytes = 0
 					}
@@ -511,7 +479,7 @@ func main() {
 		sort.Ints(sortedBytes)
 		count := len(sorted)
 		var percentiles []float64
-		for _, p := range config.Percentiles {
+		for _, p := range k.config.Percentiles {
 			percentiles = append(percentiles, sorted[int(float64(count)*p/100)])
 		}
 
@@ -537,12 +505,12 @@ func main() {
 	}
 
 	if len(measures) > 0 {
-		buildColumns()
-		for _, column := range columns {
+		k.buildColumns()
+		for _, column := range k.columns {
 			if column.Sort != nil {
-				fmt.Printf("Top %d Sort By %s\n", config.RankingCount, column.Summary)
+				fmt.Printf("Top %d Sort By %s\n", k.config.RankingCount, column.Summary)
 				By(column.Sort).Sort(measures)
-				showMeasures(measures)
+				k.showMeasures(measures)
 				fmt.Println()
 			}
 		}
@@ -551,5 +519,12 @@ func main() {
 	if len(allTimes) == 0 {
 		log.Fatal("No parsed requests found. Please confirm log_format.")
 	}
-	showTop(allTimes)
+	k.showTop(allTimes)
+}
+
+func New(in io.Reader, config Config) *Kataribe {
+	return &Kataribe{
+		in:     in,
+		config: config,
+	}
 }
