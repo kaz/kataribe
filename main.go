@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"regexp"
 	"runtime"
@@ -335,7 +334,7 @@ func (k *Kataribe) showTop(allTimes []*Time) {
 	}
 }
 
-func (k *Kataribe) Run() {
+func (k *Kataribe) Run() error {
 	reader := bufio.NewScanner(k.in)
 	scale := math.Pow10(k.config.Scale)
 
@@ -464,7 +463,7 @@ func (k *Kataribe) Run() {
 		tasks <- reader.Text()
 	}
 	if err := reader.Err(); err != nil {
-		log.Fatal("reading standard input:", err)
+		return fmt.Errorf("reading standard input: %w", err)
 	}
 	close(tasks)
 	wg.Wait()
@@ -517,9 +516,11 @@ func (k *Kataribe) Run() {
 	}
 
 	if len(allTimes) == 0 {
-		log.Fatal("No parsed requests found. Please confirm log_format.")
+		return fmt.Errorf("No parsed requests found. Please confirm log_format.")
 	}
 	k.showTop(allTimes)
+
+	return nil
 }
 
 func New(in io.Reader, config Config) *Kataribe {

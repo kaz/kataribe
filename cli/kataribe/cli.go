@@ -46,5 +46,7 @@ func main() {
 	}
 
 	k := kataribe.New(os.Stdin, config)
-	k.Run()
+	if err := k.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
